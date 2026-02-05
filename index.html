@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Oracle Dynamic Documentation Extractor</title>
+
+  <!-- XLSX export (SheetJS). If you need offline, download this file and reference locally. -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <link rel="stylesheet" href="./styles.css" />
+  <script defer src="./app.js"></script>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="topbarInner">
+      <div class="brand">
+        <div class="mark"></div>
+		<div class="titleWrap">
+		  <h1>
+		    Dynamic Documentation Extractor
+		    <span class="versionTag">v1.6.0</span>
+		  </h1>
+		  <p class="subtitle">manifest name | file | type | value | comment</p>
+		</div>
+      </div>
+      <div class="stats">
+        <div class="chip">Rows: <b id="rowsCount">0</b></div>
+        <div class="chip">Visible: <b id="visibleCount">0</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="cardHeader">
+        <div class="cardHeaderLeft">
+          <h2>Upload</h2>
+          <div id="helpBtn" class="iconBtn" title="Help">?</div>
+        </div>
+        <div class="hint">
+          Click <b>Add to Results</b> multiple times — previous rows stay.<br/>
+          Folder uploads prefer a <b>target subfolder</b> (default: Filters) if found anywhere in the path.
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col">
+          <label for="manifestInput">Manifest Name (applied to each extracted row)</label>
+          <input id="manifestInput" class="field" type="text" placeholder="(optional) leave blank to use top-level folder name" />
+          <div class="hint">If blank, the folder’s top-level name is used and will auto-update on the next Add.</div>
+        </div>
+        <div class="col">
+          <label for="folderInput">Upload Folder (Chrome/Edge, includes nested folders)</label>
+          <input id="folderInput" class="field" type="file" webkitdirectory multiple />
+          <div class="hint">Folder uploads keep relative paths (recommended). You can still upload loose files below.</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="col">
+          <label for="filesInput">Upload Files (XML / HTML)</label>
+          <input id="filesInput" class="field" type="file" multiple accept=".xml,.html,.htm" />
+          <div class="hint">You can upload individual files in addition to (or instead of) a folder upload.</div>
+        </div>
+        <div class="col"></div>
+      </div>
+
+      <details class="details" style="margin-top:10px;">
+		<summary>
+		  Advanced
+		  <span class="hint">(folder rules, templates, language)</span>
+		</summary>
+
+ 	   <div class="detailsBody">
+        <div class="row" style="margin-top:10px;">
+          <div class="col">
+            <label for="targetFolderName">Target subfolder name (for nested folder uploads)</label>
+            <input id="targetFolderName" class="field" type="text" value="Filters" placeholder="e.g., Filters" />
+            <div class="hint">When you upload a large folder, we can automatically focus on a matching subfolder (e.g., Filters) anywhere in the path.</div>
+          </div>
+          <div class="col">
+            <label for="templatesRootName">Templates folder name</label>
+            <input id="templatesRootName" class="field" type="text" value="Templates" placeholder="e.g., Templates" />
+            <div class="hint">Used when extracting smart templates from HTML under Templates → Standard/Specialty → language folders.</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div class="col">
+            <label for="templatesLang">Templates language folder</label>
+            <input id="templatesLang" class="field" type="text" value="en" placeholder="e.g., en, en_gb, es, fr" />
+            <div class="hint">We’ll prefer HTML files under this language folder in both Standard and Specialty templates if present.</div>
+          </div>
+          <div class="col">
+            <label for="standardTemplatesName">Standard templates folder name</label>
+            <input id="standardTemplatesName" class="field" type="text" value="Standard Templates" placeholder="e.g., Standard Templates" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div class="col">
+            <label for="specialtyTemplatesName">Specialty templates folder name</label>
+            <input id="specialtyTemplatesName" class="field" type="text" value="Specialty Templates" placeholder="e.g., Specialty Templates" />
+            <div class="hint">If these folder names don’t exist in your tree, we’ll fall back to any HTMLs found under Templates.</div>
+          </div>
+          <div class="col"></div>
+        </div>
+      </details>
+	  </details>
+
+      <div class="controls">
+        <label class="toggle">
+          <input id="extractFilters" type="checkbox" checked />
+          Extract Filters (XML)
+        </label>
+
+        <label class="toggle">
+          <input id="extractTemplates" type="checkbox" checked />
+          Extract Smart Templates (HTML)
+        </label>
+		
+		<label class="toggle">
+			<input id="extractUuids"  type="checkbox" checked />
+			Extract UUID (HTML)
+		</label>
+		
+        <label class="toggle">
+          <input id="includeComments" type="checkbox" checked />
+          Include trailing XML comments
+        </label>
+
+        <label class="toggle">
+          <input id="usePath" type="checkbox" checked />
+          Use folder path (recommended)
+        </label>
+
+        <label class="toggle">
+          <input id="avoidDupes" type="checkbox" checked />
+          Avoid duplicate rows
+        </label>
+
+        <button id="addBtn" class="primary">Add to Results</button>
+        <button id="compareBtn" class="ghost" disabled>Compare…</button>
+        <button id="csvBtn" class="ghost" disabled>Download CSV (visible)</button>
+
+        <!-- NEW: session export/import -->
+        <button id="exportSessionBtn" class="ghost" disabled>Export Session (JSON)</button>
+        <button id="importSessionBtn" class="ghost">Import Session…</button>
+        <input id="importSessionFile" type="file" accept=".json,application/json" style="display:none" />
+
+        <button id="clearBtn" class="danger" disabled>Clear Results</button>
+      </div>
+
+      <div id="status" class="status">Select a folder and/or files, then click <b>Add to Results</b>.</div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2 style="margin:0 0 8px;">Filters</h2>
+      <div class="hint" style="margin-top:0;">Filters apply to the results table and CSV export.</div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="col">
+          <label for="searchInput">Search (all columns)</label>
+          <input id="searchInput" class="field" type="text" placeholder="Search manifest, file, type, value, or name…" />
+        </div>
+        <div class="col">
+          <label for="filterType">Type</label>
+          <select id="filterType" class="field">
+            <option value="">All</option>
+            <option value="concept_cki">concept_cki</option>
+            <option value="eventset_name">eventset_name</option>
+            <option value="smart_template">smart_template</option>
+			<option value="uuid">uuid</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="filterManifest">Manifest</label>
+          <select id="filterManifest" class="field">
+            <option value="">All</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="col">
+          <label for="filterFile">File contains</label>
+          <input id="filterFile" class="field" type="text" placeholder="e.g. Filters/SomeFile.xml" />
+        </div>
+        <div class="col">
+          <label for="filterValue">Value contains</label>
+          <input id="filterValue" class="field" type="text" placeholder="e.g. CKI." />
+        </div>
+        <div class="col">
+          <label for="filterName">Comment / Name contains</label>
+          <input id="filterName" class="field" type="text" placeholder="e.g. Scales and Assessments" />
+        </div>
+      </div>
+
+      <div class="controls" style="margin-top:10px; justify-content:flex-end;">
+        <button id="clearFiltersBtn" class="ghost">Clear Filters</button>
+      </div>
+    </div>
+
+    <div class="tableWrap" style="margin-top:14px;">
+      <table id="resultsTable">
+        <colgroup>
+          <col style="width:220px;" />
+          <col style="width:380px;" />
+          <col style="width:160px;" />
+          <col style="width:420px;" />
+          <col style="width:360px;" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Manifest Name</th>
+            <th>File</th>
+            <th>Type</th>
+            <th>Value</th>
+            <th>Comment / Name</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- HELP MODAL -->
+  <div id="helpOverlay" class="overlay" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modalHeader">
+        <div>
+          <h3>Help</h3>
+          <p>Extraction rules, sanitization, folder selection, and compare direction.</p>
+        </div>
+        <button class="closeBtn" data-close="helpOverlay" aria-label="Close">✕</button>
+      </div>
+	 <div class="modalBody">
+
+	   <!-- EXTRACTION -->
+	   <div class="panel">
+	     <div class="panelTitle">What gets extracted</div>
+	     <ul>
+	       <li><b>Filters (XML)</b>
+	         <ul>
+	           <li>From each <span class="mono">&lt;eventset&gt;</span>:</li>
+	           <li>If present, extract <b>concept_cki</b></li>
+	           <li>Otherwise extract <b>eventset_name</b></li>
+	           <li>Optional trailing XML comments are captured as <b>Comment / Name</b></li>
+	         </ul>
+	       </li>
+
+	       <li style="margin-top:6px;"><b>Smart Templates (HTML)</b>
+	         <ul>
+	           <li>Extracts <span class="mono">dd:template_cki</span></li>
+	           <li>Captures the visible section title (if present) as <b>Name</b></li>
+	         </ul>
+	       </li>
+
+	       <li style="margin-top:6px;"><b>UUID (HTML)</b>
+	         <ul>
+	           <li>Extracts <span class="mono">dd:referenceuuid</span></li>
+	           <li>Captures the section display text (e.g. “Lab Results”) as <b>Name</b></li>
+	           <li>Appears as <b>Type = uuid</b> in results</li>
+	         </ul>
+	       </li>
+	     </ul>
+	   </div>
+
+	   <!-- FOLDER BEHAVIOR -->
+	   <div class="panel" style="margin-top:12px;">
+	     <div class="panelTitle">Folder uploads & manifest behavior</div>
+	     <ul>
+	       <li>If a folder upload contains the target subfolder (default: <b>Filters</b>), only files under that path are used.</li>
+	       <li>Template HTML is automatically discovered under:
+	         <ul>
+	           <li><b>Templates → Standard Templates → language</b></li>
+	           <li><b>Templates → Specialty Templates → language</b></li>
+	         </ul>
+	       </li>
+	       <li>If <b>Manifest Name</b> is blank, the <b>top-level folder name</b> is used automatically.</li>
+	       <li>Uploading a different root folder will auto-update the manifest unless you manually override it.</li>
+	     </ul>
+	   </div>
+
+	   <!-- COMPARE -->
+	   <div class="panel" style="margin-top:12px;">
+	     <div class="panelTitle">Compare behavior (main goal)</div>
+	     <ul>
+	       <li>The compare focuses on one question:</li>
+	       <li style="margin-left:12px;">
+	         <b>What values exist in the Package but are missing from the Domain?</b>
+	       </li>
+	       <li style="margin-top:6px;"><b>Concept / Eventset Compare</b>
+	         <ul>
+	           <li>Paste two columns: <b>CONCEPT_CKI</b> and <b>EVENTSET_NAME</b></li>
+	           <li>Values are compared independently</li>
+	         </ul>
+	       </li>
+	       <li><b>Smart Template Compare</b>
+	         <ul>
+	           <li>Paste two columns: <b>TEMPLATE_CKI</b> and Name</li>
+	           <li>Comparison is done on <b>TEMPLATE_CKI only</b></li>
+	         </ul>
+	       </li>
+	       <li>All comparisons are done on <b>unique values</b></li>
+	       <li>Normalization options:
+	         <ul>
+	           <li>Whitespace normalization (trim + collapse)</li>
+	           <li>Case-insensitive matching</li>
+	         </ul>
+	       </li>
+	     </ul>
+	   </div>
+
+	   <!-- OUTPUT -->
+	   <div class="panel" style="margin-top:12px;">
+	     <div class="panelTitle">Exports</div>
+	     <ul>
+	       <li><b>CSV Export</b> respects current table filters</li>
+	       <li><b>Full Compare Workbook</b> includes:
+	         <ul>
+	           <li>Extracted Package values</li>
+	           <li>Domain values (paste-mirrored)</li>
+	           <li>Missing in Domain sections for:
+	             <ul>
+	               <li>Concept CKI</li>
+	               <li>Eventset Name</li>
+	               <li>Smart Templates</li>
+	             </ul>
+	           </li>
+	         </ul>
+	       </li>
+	     </ul>
+	   </div>
+
+	 </div>
+  </div>
+
+  <!-- COMPARE MODAL -->
+  <div id="compareOverlay" class="overlay" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modalHeader">
+        <div>
+          <h3>Compare</h3>
+          <p>Paste a 2-column spreadsheet extract. Differences are computed on <b>unique</b> values.</p>
+        </div>
+        <button class="closeBtn" data-close="compareOverlay" aria-label="Close">✕</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="row">
+          <div class="col">
+	            <label for="domainPaste">Paste Domain values (CONCEPT_CKI + EVENTSET_NAME)</label>
+	            <textarea id="domainPaste" class="field big" placeholder="CONCEPT_CKI<TAB>EVENTSET_NAME
+	CERNER!...<TAB>Some Name
+	<TAB>Atrial Wires
+	..."></textarea>
+          </div>
+        </div>
+
+	        <div class="row">
+	          <div class="col">
+	            <label for="smartTemplatePaste">Paste Domain values (SMART_TEMPLATE)</label>
+	            <textarea id="smartTemplatePaste" class="field big" placeholder="TEMPLATE_CKI<TAB>NAME
+	CKI.SMARTTEMP.CODEVALUE!BHScalesandAssessments<TAB>Scales and Assessments
+	..."></textarea>
+	          </div>
+	        </div>
+
+        <div class="controls" style="margin-top:10px;">
+          <label class="toggle">
+            <input id="normalizeWhitespace" type="checkbox" checked />
+            Normalize whitespace (trim + collapse spaces)
+          </label>
+          <label class="toggle">
+            <input id="caseInsensitive" type="checkbox" checked />
+            Case-insensitive compare
+          </label>
+          <button id="runCompareBtn" class="primary">Run Compare</button>
+          <button id="clearPasteBtn" class="ghost">Clear Paste</button>
+
+          <button id="dlFullWorkbookBtn" class="ghost" disabled>Download Full Compare Workbook (XLSX)</button>
+        </div>
+
+        <div id="compareStatus" class="status" style="margin-top:10px;">
+          Paste your data, then click <b>Run Compare</b>.
+        </div>
+
+        <!-- Paste Preview -->
+        <div class="pastePreviewWrap">
+          <div class="pastePreviewHeader">
+            <span>Paste Preview (first rows + first rows with CONCEPT_CKI)</span>
+            <span class="pastePreviewMeta" id="pasteMeta">No paste detected</span>
+          </div>
+          <div class="pastePreviewBody" id="pastePreviewBody">
+            <div class="status" style="margin:0;">Paste data above to see a 2-column preview with visible borders.</div>
+          </div>
+        </div>
+
+        <!-- Smart Template Paste Preview -->
+        <div class="pastePreviewWrap">
+          <div class="pastePreviewHeader">
+            <span>Smart Template Paste Preview (first rows with TEMPLATE_CKI)</span>
+            <span class="pastePreviewMeta" id="tplPasteMeta">No smart template paste detected</span>
+          </div>
+          <div class="pastePreviewBody" id="tplPastePreviewBody">
+            <div class="status" style="margin:0;">Paste smart template data above to see a 2-column preview with visible borders.</div>
+          </div>
+        </div>
+
+        <div class="compareGrid">
+          <!-- CONCEPT_CKI -->
+          <div class="panel">
+            <div class="panelTitle">CONCEPT_CKI</div>
+
+            <div class="metricBox" aria-label="CONCEPT_CKI summary">
+              <div class="metricHeadRow">
+                <div></div>
+                <div style="text-align:right;">Domain</div>
+                <div style="text-align:right;">Package</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Non-empty cells</div>
+                <div class="metricVal" id="dCkiNonEmpty">0</div>
+                <div class="metricVal" id="eCkiRows">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Unique values</div>
+                <div class="metricVal" id="dCkiUnique">0</div>
+                <div class="metricVal" id="eCkiUnique">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Duplicates (cells - unique)</div>
+                <div class="metricVal" id="dCkiDupes">0</div>
+                <div class="metricVal" id="eCkiDupes">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Missing in Domain (unique)</div>
+                <div class="metricVal bad" style="grid-column: 2 / 4;" id="missingInDomainCkiCount">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Missing in Package (unique)</div>
+                <div class="metricVal bad" style="grid-column: 2 / 4;" id="missingInExtractCkiCount">0</div>
+              </div>
+            </div>
+
+            <details>
+              <summary>
+                <span>Preview missing in Domain (first 50)</span>
+                <span id="missingInDomainCkiPreviewCount">0 / 0</span>
+              </summary>
+              <div class="previewBody" id="missingInDomainCkiPreview"><span class="empty">Run compare to see preview.</span></div>
+            </details>
+          </div>
+
+          <!-- EVENTSET_NAME -->
+          <div class="panel">
+            <div class="panelTitle">EVENTSET_NAME</div>
+
+            <div class="metricBox" aria-label="EVENTSET_NAME summary">
+              <div class="metricHeadRow">
+                <div></div>
+                <div style="text-align:right;">Domain</div>
+                <div style="text-align:right;">Package</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Non-empty cells</div>
+                <div class="metricVal" id="dNameNonEmpty">0</div>
+                <div class="metricVal" id="eNameRows">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Unique values</div>
+                <div class="metricVal" id="dNameUnique">0</div>
+                <div class="metricVal" id="eNameUnique">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Duplicates (cells - unique)</div>
+                <div class="metricVal" id="dNameDupes">0</div>
+                <div class="metricVal" id="eNameDupes">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Missing in Domain (unique)</div>
+                <div class="metricVal bad" style="grid-column: 2 / 4;" id="missingInDomainNameCount">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Missing in Package (unique)</div>
+                <div class="metricVal bad" style="grid-column: 2 / 4;" id="missingInExtractNameCount">0</div>
+              </div>
+            </div>
+
+            <details>
+              <summary>
+                <span>Preview missing in Domain (first 50)</span>
+                <span id="missingInDomainNamePreviewCount">0 / 0</span>
+              </summary>
+              <div class="previewBody" id="missingInDomainNamePreview"><span class="empty">Run compare to see preview.</span></div>
+            </details>
+          </div>
+
+          <!-- SMART_TEMPLATE -->
+          <div class="panel">
+            <div class="panelTitle">SMART_TEMPLATE (dd:template_cki)</div>
+
+            <div class="metricBox" aria-label="SMART_TEMPLATE summary">
+              <div class="metricHeadRow">
+                <div></div>
+                <div style="text-align:right;">Domain</div>
+                <div style="text-align:right;">Package</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Non-empty cells</div>
+                <div class="metricVal" id="dTplNonEmpty">0</div>
+                <div class="metricVal" id="eTplRows">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Unique values</div>
+                <div class="metricVal" id="dTplUnique">0</div>
+                <div class="metricVal" id="eTplUnique">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Duplicates (cells - unique)</div>
+                <div class="metricVal" id="dTplDupes">0</div>
+                <div class="metricVal" id="eTplDupes">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Missing in Domain (unique)</div>
+                <div class="metricVal bad" style="grid-column: 2 / 4;" id="missingInDomainTplCount">0</div>
+              </div>
+
+              <div class="metricRow">
+                <div class="metricLabel">Missing in Package (unique)</div>
+                <div class="metricVal bad" style="grid-column: 2 / 4;" id="missingInExtractTplCount">0</div>
+              </div>
+            </div>
+
+            <details>
+              <summary>
+                <span>Preview missing in Domain (first 50)</span>
+                <span id="missingInDomainTplPreviewCount">0 / 0</span>
+              </summary>
+              <div class="previewBody" id="missingInDomainTplPreview"><span class="empty">Run compare to see preview.</span></div>
+            </details>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
